@@ -1,0 +1,67 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# Binary tools — install via system package manager, never commit
+backend/ffmpeg.exe
+backend/ffmpeg
+*.exe
+
+# Test audio/video artifacts
+backend/*.mp3
+backend/*.wav
+backend/*.webm
+
+# Scratch/debug test scripts
+backend/test_groq_*.py
+backend/test_vision.py
+backend/test_models.py
+
+# Runtime data directories
+backend/data/
+.Python
+*.egg
+*.egg-info/
+dist/
+build/
+*.spec
+
+# Virtual environment
+venv/
+.venv/
+ENV/
+env/
+
+# Environment variables (NEVER commit these!)
+.env
+.env.local
+.env.*.local
+
+# Whisper model cache
+~/.cache/whisper/
+
+# Node.js
+node_modules/
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+
+# Logs
+*.log
+logs/
+
+# OS artifacts
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# MongoDB data volumes (if running locally)
+mongo-data/
+
+# IDE
+.vscode/
+.idea/
+*.suo
+*.user

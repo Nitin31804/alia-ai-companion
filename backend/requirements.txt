@@ -1,0 +1,13 @@
+fastapi
+uvicorn[standard]
+python-dotenv
+google-generativeai
+pydantic
+websockets
+openai-whisper
+numpy
+soundfile
+opencv-python
+motor
+pymongo
+sentence-transformers

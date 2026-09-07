@@ -1,0 +1,9 @@
+{
+  "appId": "com.aicompanion.app",
+  "appName": "Aria",
+  "webDir": "dist",
+  "server": {
+    "cleartext": true,
+    "androidScheme": "http"
+  }
+}
