@@ -1,9 +1,11 @@
 import os
 import logging
+from dotenv import load_dotenv
 from motor.motor_asyncio import AsyncIOMotorClient
 from pymongo import ASCENDING
 
-# Load env vars (already loaded in main)
+load_dotenv()
+
 MONGODB_URI = os.getenv("MONGODB_URI")
 MONGODB_DB = os.getenv("MONGODB_DB", "ai_companion")
 MONGODB_COLLECTION = os.getenv("MONGODB_COLLECTION", "conversations")
@@ -19,11 +21,8 @@ async def init_db():
     client = AsyncIOMotorClient(MONGODB_URI)
     db = client[MONGODB_DB]
     collection = db[MONGODB_COLLECTION]
-    # Ensure a vector index exists (requires MongoDB Atlas Vector Search feature)
     try:
-        await collection.create_index([
-            ("embedding", "2dsphere")
-        ], name="embedding_index")
+        await collection.create_index([("timestamp", ASCENDING)], name="timestamp_index")
     except Exception as e:
         logging.info(f"Index creation ignored or failed: {e}")
 
@@ -39,7 +38,7 @@ async def store_interaction(user_text: str, ai_text: str, embedding: list[float]
     await collection.insert_one(doc)
 
 async def retrieve_context(query_embedding: list[float], limit: int = 3):
-    if collection is None:
+    if collection is None or not query_embedding:
         return []
     # Use $vectorSearch aggregation if supported, otherwise fallback to simple $near
     pipeline = [

@@ -51,6 +51,10 @@ frontend/.vite/
 # Logs
 *.log
 logs/
+backend/*.db
+backend/*.db-*
+test-results/
+playwright-report/
 
 # OS artifacts
 .DS_Store

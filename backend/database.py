@@ -1,8 +1,9 @@
 
+import os
 import sqlite3
-import json
 
-DB_FILE = 'memory.db'
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DB_FILE = os.path.join(BASE_DIR, 'memory.db')
 
 def init_db():
     conn = sqlite3.connect(DB_FILE)

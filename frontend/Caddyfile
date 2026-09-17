@@ -1,0 +1,25 @@
+{$APP_DOMAIN} {
+    encode zstd gzip
+    header {
+        X-Content-Type-Options nosniff
+        Referrer-Policy strict-origin-when-cross-origin
+        X-Frame-Options DENY
+        Permissions-Policy "camera=(self), microphone=(self), geolocation=()"
+        Strict-Transport-Security "max-age=31536000"
+        Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' data: blob:; connect-src 'self'; worker-src 'self' blob:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+        -Server
+    }
+    @api path /ws/* /health
+    handle @api {
+        reverse_proxy backend:8000
+    }
+    handle {
+        root * /srv
+        @assets path /assets/*
+        header @assets Cache-Control "public, max-age=31536000, immutable"
+        @document path / /index.html
+        header @document Cache-Control "no-cache"
+        try_files {path} /index.html
+        file_server
+    }
+}

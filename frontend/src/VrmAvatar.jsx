@@ -2,7 +2,6 @@ import React, { useEffect, useState } from 'react'
 import { Canvas, useFrame } from '@react-three/fiber'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader'
 import { VRMLoaderPlugin, VRMUtils } from '@pixiv/three-vrm'
-import * as THREE from 'three'
 
 function AvatarModel({ vrm, isSpeaking, emotion }) {
   // Animation loop
@@ -64,8 +63,10 @@ function AvatarModel({ vrm, isSpeaking, emotion }) {
           if (leftElbow) leftElbow.rotation.z = 0.1
           if (rightElbow) rightElbow.rotation.z = -0.1
         } else {
-          // Allow the model to rest naturally
-          // Only apply a tiny bit of breathing sway
+          if (leftArm) leftArm.rotation.z = -1.08 + Math.sin(t * 1.1) * 0.015
+          if (rightArm) rightArm.rotation.z = 1.08 - Math.sin(t * 1.1) * 0.015
+          if (leftElbow) leftElbow.rotation.z = -0.18
+          if (rightElbow) rightElbow.rotation.z = 0.18
         }
 
         if (head && !isSpeaking && emotion !== 'sad') {
@@ -81,15 +82,21 @@ function AvatarModel({ vrm, isSpeaking, emotion }) {
 
 export default function VrmAvatar({ isSpeaking, emotion }) {
   const [vrm, setVrm] = useState(null)
+  const [failed, setFailed] = useState(false)
 
   useEffect(() => {
+    let disposed = false
+    let model
     const loader = new GLTFLoader()
     loader.register((parser) => new VRMLoaderPlugin(parser))
     
     loader.load(
-      '/model.vrm?v=' + Date.now(), 
+      '/model.vrm',
       (gltf) => {
+        if (disposed) { VRMUtils.deepDispose(gltf.scene); return }
         const loadedVrm = gltf.userData.vrm
+        if (!loadedVrm) { VRMUtils.deepDispose(gltf.scene); setFailed(true); return }
+        model = loadedVrm
         VRMUtils.removeUnnecessaryVertices(gltf.scene)
         VRMUtils.removeUnnecessaryJoints(gltf.scene)
         
@@ -100,13 +107,15 @@ export default function VrmAvatar({ isSpeaking, emotion }) {
 
         setVrm(loadedVrm)
       },
-      (progress) => console.log('Loading VRM...', 100.0 * (progress.loaded / progress.total), '%'),
-      (error) => console.error(error)
+      undefined,
+      () => { if (!disposed) setFailed(true) }
     )
+    return () => { disposed = true; if (model) VRMUtils.deepDispose(model.scene) }
   }, [])
 
   return (
     <div style={{ width: '100%', height: '100%', pointerEvents: 'none', zIndex: 5 }}>
+      {(!vrm || failed) && <div className="avatar-fallback"><img src="/elara_new.jpg" alt="Alia avatar" /><span>{failed ? 'Avatar unavailable' : 'Loading avatar...'}</span></div>}
       {/* Zoomed in closer to Z=3.1 and tilted slightly down to perfectly fit her large on a portrait mobile screen */}
       <Canvas camera={{ position: [0, -0.1, 3.1], fov: 40 }} gl={{ alpha: true }}>
         <ambientLight intensity={1.5} color="#ffffff" />

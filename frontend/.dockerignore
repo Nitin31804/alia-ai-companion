@@ -1,0 +1,6 @@
+node_modules
+dist
+android
+.env*
+test-results
+playwright-report

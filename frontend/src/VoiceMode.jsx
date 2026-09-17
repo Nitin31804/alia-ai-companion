@@ -1,424 +1,341 @@
-import React, { useState, useRef, useEffect } from 'react'
-import { TextToSpeech } from '@capacitor-community/text-to-speech'
+import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { SpeechRecognition } from '@capacitor-community/speech-recognition'
+import { ArrowLeft, Camera, CameraOff, Mic, MicOff, Volume2, Wifi, WifiOff } from 'lucide-react'
 import VrmAvatar from './VrmAvatar'
 import './VoiceMode.css'
-import { Mic, MicOff } from 'lucide-react'
 
-export default function VoiceMode({ ws, isConnected, onBack, chatSessionId }) {
+const captureVideoFrame = (video) => {
+  if (!video || !video.videoWidth || !video.videoHeight) return null
+
+  const canvas = document.createElement('canvas')
+  const maxSize = 900
+  const scale = Math.min(1, maxSize / Math.max(video.videoWidth, video.videoHeight))
+  canvas.width = Math.round(video.videoWidth * scale)
+  canvas.height = Math.round(video.videoHeight * scale)
+  canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height)
+  return canvas.toDataURL('image/jpeg', 0.72).split(',')[1]
+}
+
+export default function VoiceMode({ socket, isConnected, onBack, chatSessionId, language, onSend, onInterrupt, imagesEnabled }) {
   const [isListening, setIsListening] = useState(false)
-  const [isSpeaking, setIsSpeaking]   = useState(false)
-  const [emotion, setEmotion]         = useState('neutral')
-  const [action, setAction]           = useState('idle')
+  const [isSpeaking, setIsSpeaking] = useState(false)
+  const [emotion, setEmotion] = useState('neutral')
   const [userSubtitle, setUserSubtitle] = useState('')
-  const [aiSubtitle, setAiSubtitle]     = useState('')
-  const [status, setStatus]           = useState('Tap the mic to talk')
-  const [isCameraOn, setIsCameraOn]   = useState(false)
-  const mediaRecorder = useRef(null)
-  const audioChunks   = useRef([])
-  const webcamStream  = useRef(null)
-  const videoRef      = useRef(null)
-  
-  const [camPos, setCamPos] = useState({ x: 20, y: window.innerHeight - 300 })
-  const isDragging = useRef(false)
-  const dragOffset = useRef({ x: 0, y: 0 })
+  const [aiSubtitle, setAiSubtitle] = useState('')
+  const [status, setStatus] = useState('Tap to talk')
+  const [isCameraOn, setIsCameraOn] = useState(false)
 
-  const handlePointerDown = (e) => {
-    isDragging.current = true
-    dragOffset.current = {
-      x: e.clientX - camPos.x,
-      y: e.clientY - camPos.y
-    }
-    e.target.setPointerCapture(e.pointerId)
-  }
-
-  const handlePointerMove = (e) => {
-    if (!isDragging.current) return
-    setCamPos({
-      x: e.clientX - dragOffset.current.x,
-      y: e.clientY - dragOffset.current.y
-    })
-  }
-
-  const handlePointerUp = (e) => {
-    isDragging.current = false
-    e.target.releasePointerCapture(e.pointerId)
-  }
-  
   const audioQueue = useRef([])
-  const isPlayingAudio = useRef(false)
   const currentAudio = useRef(null)
-  const [activeSentence, setActiveSentence] = useState('')
+  const isPlayingAudio = useRef(false)
+  const playNextAudioRef = useRef(null)
+  const webcamStream = useRef(null)
+  const videoRef = useRef(null)
+  const browserRecognition = useRef(null)
+  const recognitionMode = useRef(null)
+  const transcriptRef = useRef('')
+  const activeTurnId = useRef(null)
+  const mounted = useRef(true)
+  const sentTranscript = useRef(false)
+  const sendUtteranceRef = useRef(null)
 
-  const stopAudio = async () => {
-    audioQueue.current = [] 
+  const stopAudio = useCallback(() => {
+    audioQueue.current = []
     isPlayingAudio.current = false
-    if (currentAudio.current) {
-      try {
-        currentAudio.current.pause()
-        currentAudio.current.currentTime = 0
-      } catch (e) {}
-    }
+    currentAudio.current?.pause()
+    currentAudio.current = null
     setIsSpeaking(false)
     setEmotion('neutral')
-    setAction('idle')
-    setActiveSentence('')
-    setStatus('Tap the mic to talk')
-  }
-
-  useEffect(() => {
-    return () => stopAudio()
+    setStatus('Tap to talk')
   }, [])
 
-  const playNextAudio = async () => {
+  const playNextAudio = useCallback(async () => {
     if (audioQueue.current.length === 0) {
       isPlayingAudio.current = false
       setIsSpeaking(false)
       setEmotion('neutral')
-      setAction('idle')
-      setStatus('Tap the mic to talk')
-      setActiveSentence('')
+      setStatus('Tap to talk')
       return
     }
-
-    isPlayingAudio.current = true
-    setIsSpeaking(true)
-    setStatus('Speaking...')
 
     const nextChunk = audioQueue.current.shift()
-    setActiveSentence(nextChunk.text)
+    isPlayingAudio.current = true
+    setIsSpeaking(true)
+    setStatus('Speaking')
 
     try {
-      // Use bulletproof HTML5 Audio instead of WebAudio Context
-      const audio = new Audio("data:audio/mp3;base64," + nextChunk.content)
+      const audio = new Audio(`data:audio/mp3;base64,${nextChunk.content}`)
       currentAudio.current = audio
-      
-      audio.onended = () => {
-        playNextAudio()
-      }
-      
-      audio.onerror = (e) => {
-        console.error('HTML5 Audio failed:', e)
-        playNextAudio()
-      }
-      
+      audio.onended = () => playNextAudioRef.current?.()
+      audio.onerror = () => playNextAudioRef.current?.()
       await audio.play()
-    } catch (e) {
-      console.error('Audio play failed:', e)
-      playNextAudio() 
+    } catch {
+      playNextAudioRef.current?.()
     }
-  }
+  }, [])
 
-  const activeSessionId = useRef('initial')
-
-  // Listen to WebSocket messages
   useEffect(() => {
-    if (!ws?.current) return
+    playNextAudioRef.current = playNextAudio
+  }, [playNextAudio])
 
-    const handler = async (event) => {
-      const data = JSON.parse(event.data)
-
-      // Ignore messages from older interrupted sessions
-      if (data.session_id && data.session_id !== activeSessionId.current) {
-        return
-      }
-
-      if (data.type === 'text_stream') {
-        setAiSubtitle(prev => prev + data.content)
-        if (!isPlayingAudio.current) setStatus('Thinking...')
-      }
-
-      if (data.type === 'audio_sentence') {
-        audioQueue.current.push({ text: data.text, content: data.content })
-        if (!isPlayingAudio.current) {
-          playNextAudio()
-        }
-      }
-
-      // Keep compatibility with normal text messages if they happen
-      if (data.type === 'text') {
-        setAiSubtitle(data.content)
-      }
-      if (data.type === 'audio') {
-        audioQueue.current.push({ text: data.content, content: data.content })
-        if (!isPlayingAudio.current) playNextAudio()
-      }
-    }
-
-    ws.current.addEventListener('message', handler)
-    return () => ws.current?.removeEventListener('message', handler)
-  }, [ws])
-
-  const toggleMic = async () => {
-    // Instantly stop the AI from speaking when we tap the mic
-    stopAudio()
-    ws.current?.send(JSON.stringify({ type: 'interrupt' }))
-    
-    if (isListening) {
-      SpeechRecognition.stop()
-      setIsListening(false)
-      setStatus('Thinking...')
-      
-      // Grab camera frame if on
-      let frameB64 = null
-      if (isCameraOn && videoRef.current) {
-        const canvas = document.createElement('canvas')
-        const MAX_WIDTH = 600
-        const MAX_HEIGHT = 600
-        let width = videoRef.current.videoWidth
-        let height = videoRef.current.videoHeight
-
-        if (width > height) {
-          if (width > MAX_WIDTH) {
-            height = Math.round((height * MAX_WIDTH) / width)
-            width = MAX_WIDTH
-          }
-        } else {
-          if (height > MAX_HEIGHT) {
-            width = Math.round((width * MAX_HEIGHT) / height)
-            height = MAX_HEIGHT
-          }
-        }
-
-        canvas.width = width
-        canvas.height = height
-        const ctx = canvas.getContext('2d')
-        ctx.drawImage(videoRef.current, 0, 0, width, height)
-        const dataUrl = canvas.toDataURL('image/jpeg', 0.6)
-        frameB64 = dataUrl.split(',')[1]
-      }
-
-      // Send to backend
-      const newSessionId = Date.now().toString()
-      // Prevent sending empty text if Android cut off early or they double-tapped
-      if (!userSubtitle || userSubtitle.trim() === '...' || userSubtitle.trim() === '') {
-        setStatus('Tap the mic to talk')
-        return
-      }
-      
-      activeSessionId.current = newSessionId
-      const payload = {
-        type: 'text', // Send as standard text now since it's already transcribed!
-        content: userSubtitle, // The final transcription
-        session_id: newSessionId,
-        chat_session_id: chatSessionId,
-        companion_name: 'Alia',
-        voice_mode: true
-      }
-      if (frameB64) {
-        payload.webcam_frame = frameB64
-      }
-      ws.current?.send(JSON.stringify(payload))
+  const sendUtterance = (text) => {
+    const finalText = text.trim()
+    if (!mounted.current || sentTranscript.current) return
+    sentTranscript.current = true
+    if (!finalText || !isConnected) {
+      setStatus(isConnected ? 'Tap to talk' : 'Offline')
       return
     }
 
+    const frame = isCameraOn ? captureVideoFrame(videoRef.current) : null
+    setAiSubtitle('')
+    const turnId = onSend(finalText, frame, true)
+    activeTurnId.current = turnId
+    setStatus(turnId ? 'Thinking' : 'Could not send. Check the connection or finish the current reply.')
+  }
+  useEffect(() => { sendUtteranceRef.current = sendUtterance })
+
+  const stopListening = async () => {
+    setIsListening(false)
+    setStatus('Thinking')
+
+    if (recognitionMode.current === 'browser') {
+      browserRecognition.current?.stop()
+      return
+    }
+
+    try {
+      await SpeechRecognition.stop()
+    } catch {
+      // The browser fallback does not use the Capacitor stop path.
+    }
+
+    sendUtterance(transcriptRef.current)
+  }
+
+  const startBrowserRecognition = () => {
+    const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition
+    if (!Recognition) return false
+
+    const recognition = new Recognition()
+    browserRecognition.current = recognition
+    recognitionMode.current = 'browser'
+    recognition.lang = language
+    recognition.interimResults = true
+    recognition.continuous = false
+
+    recognition.onstart = () => {
+      sentTranscript.current = false
+      transcriptRef.current = ''
+      setUserSubtitle('')
+      setAiSubtitle('')
+      setIsListening(true)
+      setStatus('Listening')
+    }
+
+    recognition.onresult = (event) => {
+      let transcript = ''
+      for (const result of event.results) transcript += result[0].transcript
+      transcriptRef.current = transcript.trim()
+      setUserSubtitle(transcriptRef.current)
+    }
+
+    recognition.onerror = () => {
+      sentTranscript.current = true
+      setStatus('Could not hear that')
+    }
+
+    recognition.onend = () => {
+      setIsListening(false)
+      if (mounted.current) sendUtteranceRef.current?.(transcriptRef.current)
+    }
+
+    try { recognition.start() } catch { setStatus('Microphone unavailable'); setIsListening(false) }
+    return true
+  }
+
+  const startCapacitorRecognition = async () => {
     try {
       const { available } = await SpeechRecognition.available()
       if (!available) {
-        alert('Speech recognition is not available on this device.')
+        setStatus('Speech recognition unavailable')
         return
       }
 
       await SpeechRecognition.requestPermissions()
-
-      setIsListening(true)
-      setStatus('Listening...')
-      setUserSubtitle('...')
+      if (!mounted.current) return
+      sentTranscript.current = false
+      transcriptRef.current = ''
+      recognitionMode.current = 'capacitor'
+      setUserSubtitle('')
       setAiSubtitle('')
-
-      SpeechRecognition.start({
-        language: 'en-IN',
+      setIsListening(true)
+      setStatus('Listening')
+      await SpeechRecognition.start({
+        language,
         partialResults: true,
         popup: false,
       })
-
-    } catch (err) {
-      console.error('Error starting speech recognition:', err)
-      setStatus('Microphone access denied or error')
+    } catch {
       setIsListening(false)
+      setStatus('Microphone unavailable')
     }
   }
 
-  // Handle when speech recognition automatically stops (user stops speaking)
-  useEffect(() => {
-    const startListener = SpeechRecognition.addListener('partialResults', (data) => {
-      if (data.matches && data.matches.length > 0) {
-        setUserSubtitle(data.matches[0])
-      }
-    })
+  const toggleMic = async () => {
+    stopAudio()
+    onInterrupt()
 
-    // There is no explicit 'end' event in Capacitor SpeechRecognition that passes the final result easily without a wrapper, but usually iOS/Android stop when done.
-    // Wait, the plugin might need a specific handling.
-    // Let's implement it robustly.
-    return () => {
-      startListener.then(l => l.remove())
+    if (isListening) {
+      await stopListening()
+      return
     }
-  }, [])
+
+    if (!startBrowserRecognition()) await startCapacitorRecognition()
+  }
 
   const toggleCamera = async () => {
     if (isCameraOn) {
-      webcamStream.current?.getTracks().forEach(t => t.stop())
+      webcamStream.current?.getTracks().forEach((track) => track.stop())
       webcamStream.current = null
       if (videoRef.current) videoRef.current.srcObject = null
       setIsCameraOn(false)
-    } else {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
-        webcamStream.current = stream
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream
-          await videoRef.current.play().catch(() => {})
-        }
-        setIsCameraOn(true)
-      } catch (err) {
-        alert('Rear camera access denied.')
+      return
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
+      if (!mounted.current) { stream.getTracks().forEach(track => track.stop()); return }
+      webcamStream.current = stream
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream
+        await videoRef.current.play().catch(() => {})
       }
+      setIsCameraOn(true)
+    } catch {
+      setStatus('Camera unavailable')
     }
   }
-
-  const activeSentenceRef = useRef(null)
 
   useEffect(() => {
-    if (activeSentenceRef.current) {
-      activeSentenceRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' })
-    }
-  }, [activeSentence])
+    let partialListener
+    let stateListener
+    let disposed = false
 
-  const renderAiSubtitle = () => {
-    if (!activeSentence || !aiSubtitle.includes(activeSentence)) return aiSubtitle
-    const activeIdx = aiSubtitle.indexOf(activeSentence)
-    const before = aiSubtitle.slice(0, activeIdx)
-    const active = aiSubtitle.slice(activeIdx, activeIdx + activeSentence.length)
-    const after = aiSubtitle.slice(activeIdx + activeSentence.length)
-    return (
-      <>
-        <span>{before}</span>
-        <span ref={activeSentenceRef} className="active-sentence">{active}</span>
-        <span>{after}</span>
-      </>
-    )
-  }
+    SpeechRecognition.addListener('partialResults', (data) => {
+      const text = data.matches?.[0]?.trim() || ''
+      transcriptRef.current = text
+      setUserSubtitle(text)
+    }).then((listener) => {
+      if (disposed) listener.remove()
+      else partialListener = listener
+    }).catch(() => {})
+
+    SpeechRecognition.addListener('listeningState', data => {
+      if (data.status === 'stopped' && recognitionMode.current === 'capacitor') {
+        setIsListening(false)
+        sendUtteranceRef.current?.(transcriptRef.current)
+      }
+    }).then(listener => { if (disposed) listener.remove(); else stateListener = listener }).catch(() => {})
+
+    return () => {
+      disposed = true
+      partialListener?.remove()
+      stateListener?.remove()
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!socket) return undefined
+
+    const handler = (event) => {
+      let data
+      try { data = JSON.parse(event.data) } catch { return }
+      if (data.chat_session_id !== chatSessionId || data.session_id !== activeTurnId.current) return
+
+      if (data.type === 'text_stream') {
+        setAiSubtitle((previous) => `${previous}${data.content || ''}`)
+        setStatus('Replying')
+      }
+
+      if (data.type === 'text_complete') {
+        setStatus('Preparing voice')
+      }
+      if (data.type === 'error' || data.type === 'warning') setStatus(data.content)
+      if (data.type === 'text_stream_end' && !isPlayingAudio.current) setStatus(data.status === 'complete' ? 'Tap to talk' : 'Reply stopped. Tap to try again.')
+
+      if (data.type === 'audio_sentence') {
+        audioQueue.current.push({ text: data.text, content: data.content })
+        if (!isPlayingAudio.current) playNextAudioRef.current?.()
+      }
+    }
+
+    socket.addEventListener('message', handler)
+    return () => socket.removeEventListener('message', handler)
+  }, [socket, chatSessionId])
+
+  useEffect(() => {
+    // A disconnected transport must stop audio already playing on the device.
+    // eslint-disable-next-line react/set-state-in-effect
+    if (!isConnected) { stopAudio(); setStatus('Offline. Reconnecting...') }
+  }, [isConnected, stopAudio])
+
+  useEffect(() => {
+    mounted.current = true
+    return () => {
+      mounted.current = false
+      stopAudio()
+      webcamStream.current?.getTracks().forEach((track) => track.stop())
+      if (browserRecognition.current) browserRecognition.current.onend = null
+      browserRecognition.current?.abort?.()
+      if (recognitionMode.current === 'capacitor') SpeechRecognition.stop().catch(() => {})
+    }
+  }, [stopAudio])
 
   return (
     <div className="voice-mode-screen">
-      {/* Back Button */}
-      <button className="voice-back-btn" onClick={onBack}>← Chat</button>
+      <header className="voice-topbar">
+        <button className="voice-nav-button" type="button" onClick={onBack}>
+          <ArrowLeft size={18} />
+          Chat
+        </button>
+        <div className={`voice-online-pill ${isConnected ? 'connected' : 'offline'}`}>
+          {isConnected ? <Wifi size={15} /> : <WifiOff size={15} />}
+          {isConnected ? 'Online' : 'Offline'}
+        </div>
+      </header>
 
-      {/* Connection Badge */}
-      <div className={`voice-status-badge ${isConnected ? 'connected' : 'disconnected'}`}>
-        {isConnected ? '🟢 Online' : '🔴 Offline'}
-      </div>
-
-      {/* 3D Avatar Area */}
       <div className="voice-avatar-area">
         <VrmAvatar isSpeaking={isSpeaking} emotion={emotion} />
       </div>
 
-      {/* Cinematic Vignette Overlay */}
-      <div className="vignette" />
-
-      {/* Modern Glassmorphism UI Bottom Bar */}
-      <div style={{ position: 'absolute', bottom: '40px', width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', zIndex: 10 }}>
-        
-        {/* AI Subtitle Glass Bubble */}
-        <div 
-          className="glass-panel"
-          style={{ 
-            padding: '16px 28px', 
-            borderRadius: '24px', 
-            maxWidth: '85%', 
-            marginBottom: '24px', 
-            textAlign: 'center', 
-            minHeight: '40px', 
-            display: 'flex', 
-            alignItems: 'center', 
-            justifyContent: 'center',
-            opacity: aiSubtitle ? 1 : 0,
-            transform: aiSubtitle ? 'translateY(0)' : 'translateY(10px)',
-            transition: 'all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275)'
-          }}>
-          <p style={{ margin: 0, fontSize: '18px', color: '#ffffff', fontWeight: '500', lineHeight: '1.4', textShadow: '0 2px 4px rgba(0,0,0,0.3)' }}>
-            {aiSubtitle}
-          </p>
+      <section className="voice-subtitles">
+        <div className="voice-ai-line">
+          {aiSubtitle || status}
         </div>
-
-        {/* User Subtitle (Soft & Elegant) */}
-        <div style={{ 
-            color: 'rgba(255,255,255,0.7)', 
-            textShadow: '0 2px 4px rgba(0,0,0,0.8)', 
-            marginBottom: '20px', 
-            fontSize: '15px', 
-            fontWeight: '400',
-            letterSpacing: '0.5px'
-          }}>
-          {userSubtitle}
+        <div className="voice-user-line">
+          {userSubtitle || ' '}
         </div>
-        
-        {/* Status Text */}
-        <p style={{ 
-          color: 'rgba(255,255,255,0.6)', 
-          marginTop: '16px', 
-          fontSize: '13px', 
-          textTransform: 'uppercase', 
-          letterSpacing: '1.5px',
-          fontWeight: '600',
-          textShadow: '0 2px 4px rgba(0,0,0,0.8)' 
-        }}>
-          {status}
-        </p>
+        <div className="voice-status" role="status">{status}</div>
+      </section>
+
+      <div className={`camera-peek ${isCameraOn ? 'visible' : ''}`}>
+        <video ref={videoRef} autoPlay muted playsInline />
       </div>
-      
-      {/* Camera Preview */}
-      <div 
-        style={{ 
-          position: 'absolute', 
-          top: `${camPos.y}px`, 
-          left: `${camPos.x}px`,
-          touchAction: 'none',
-          zIndex: 1000
-        }}
-        onPointerDown={handlePointerDown}
-        onPointerMove={handlePointerMove}
-        onPointerUp={handlePointerUp}
-        onPointerCancel={handlePointerUp}
-      >
-        <video 
-          ref={videoRef} 
-          autoPlay 
-          playsInline 
-          muted 
-          style={{ width: '100px', height: '140px', objectFit: 'cover', borderRadius: '12px', border: '2px solid rgba(255,255,255,0.2)', display: isCameraOn ? 'block' : 'none', background: '#000', pointerEvents: 'none' }} 
-        />
-        <button 
-          onClick={toggleCamera}
-          onPointerDown={(e) => e.stopPropagation()} // Prevent dragging when clicking button
-          style={{ position: 'absolute', bottom: isCameraOn ? '-40px' : '0px', left: isCameraOn ? '10px' : '0px', background: isCameraOn ? '#a855f7' : 'rgba(255,255,255,0.1)', border: 'none', color: '#fff', borderRadius: '20px', padding: '8px 16px', fontWeight: 'bold', pointerEvents: 'auto' }}
-        >
-          {isCameraOn ? '📷 On' : '📷 Off'}
+
+      <div className="voice-controls">
+        <button className={`voice-control-button ${isCameraOn ? 'active' : ''}`} type="button" onClick={toggleCamera} aria-label={isCameraOn ? 'Turn camera off' : 'Turn camera on'} title={isCameraOn ? 'Turn camera off' : 'Turn camera on'} disabled={!imagesEnabled} aria-pressed={isCameraOn}>
+          {isCameraOn ? <Camera size={22} /> : <CameraOff size={22} />}
+        </button>
+
+        <button className={`voice-mic-button ${isListening ? 'listening' : isSpeaking ? 'speaking' : ''}`} type="button" onClick={toggleMic} aria-label={isListening ? 'Stop listening' : 'Start listening'} title={isListening ? 'Stop listening' : 'Start listening'} disabled={!isConnected}>
+          {isListening ? <MicOff size={30} /> : <Mic size={30} />}
+        </button>
+
+        <button className="voice-control-button" type="button" onClick={() => { stopAudio(); onInterrupt() }} aria-label="Stop audio" title="Stop audio">
+          <Volume2 size={22} />
         </button>
       </div>
-
-      {/* Pulsating Microphone Button */}
-      <button 
-        onClick={toggleMic}
-        className={isListening ? 'mic-listening' : (isPlayingAudio.current ? 'mic-speaking' : '')}
-        style={{
-          position: 'absolute', bottom: '110px',
-          width: '76px', height: '76px', borderRadius: '50%',
-          background: isListening ? 'linear-gradient(135deg, #ff4757, #ff6b81)' : 'rgba(255,255,255,0.95)',
-          border: 'none',
-          boxShadow: '0 10px 30px rgba(0,0,0,0.3)',
-          display: 'flex', justifyContent: 'center', alignItems: 'center',
-          cursor: 'pointer', transition: 'all 0.3s ease',
-          zIndex: 20
-        }}
-      >
-        {isListening ? 
-          <MicOff size={32} color="#ffffff" /> : 
-          <Mic size={32} color={isPlayingAudio.current ? "#ff6b81" : "#2c3e50"} />
-        }
-      </button>
-
     </div>
   )
 }

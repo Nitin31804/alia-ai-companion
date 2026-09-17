@@ -1,157 +1,61 @@
-# Multimodal AI Companion Hub
+# Alia
 
-A real-time, locally-run AI assistant that processes **text**, **voice**, and **vision** simultaneously. Talk to it, show it objects via webcam or your screen, and it responds with text and natural-sounding speech — all while remembering your past conversations.
+A responsive AI companion with streaming chat, optional image understanding, browser/device dictation, and a 3D voice view. Release target: an invitation-only web beta.
 
----
+## Run locally
 
-## ✨ Features
+Use Python 3.12 and Node 22.19 or later in the Node 22 line.
 
-| Feature | Technology |
-|---|---|
-| 💬 Text Chat | React + FastAPI WebSockets |
-| 🎙️ Speech-to-Text | OpenAI Whisper (local) |
-| 🔊 Text-to-Speech | ElevenLabs |
-| 👁️ Webcam Vision | OpenCV → Gemini Vision |
-| 🖥️ Screen Capture | Browser `getDisplayMedia` → Gemini Vision |
-| 🧠 AI Brain | Google Gemini 1.5 Pro |
-| 💾 Long-term Memory | MongoDB + OpenAI Embeddings |
-| 🎭 3D Avatar | Three.js + morph targets |
-
----
-
-## 🏗️ Architecture
-
-```
-Browser (React)
-  ├── Text input
-  ├── 🎙️ Mic (MediaRecorder → WebM)
-  ├── 📸 Webcam / 🖥️ Screen capture toggle
-  └── 3D Avatar (Three.js)
-         │  WebSocket (JSON)
-         ▼
-FastAPI Backend (Python)
-  ├── Whisper → transcription
-  ├── OpenAI ada-002 → embedding
-  ├── MongoDB → retrieve top-3 past context
-  ├── OpenCV / Screen frame → JPEG
-  ├── Gemini 1.5 Pro → AI reply
-  ├── MongoDB → store interaction
-  └── ElevenLabs → audio reply
-```
-
----
-
-## 🚀 Quick Start
-
-### Prerequisites
-- Python 3.10+
-- Node.js 18+
-- Docker Desktop (for local MongoDB)
-- FFmpeg (`winget install ffmpeg` on Windows)
-
-### 1. Clone the repo
-```bash
-git clone <your-repo-url>
-cd ai-companion-hub
-```
-
-### 2. Set up API Keys
-```bash
-cp backend/.env.example backend/.env
-```
-Open `backend/.env` and fill in:
-```
-GEMINI_API_KEY=...        # https://aistudio.google.com
-ELEVENLABS_API_KEY=...    # https://elevenlabs.io
-OPENAI_API_KEY=...        # https://platform.openai.com
-MONGODB_URI=mongodb://mongo:27017
-```
-
-### 3. Start MongoDB (Docker)
-```bash
-docker-compose up -d
-```
-
-### 4. Start the backend
-```bash
+```powershell
 cd backend
 python -m venv venv
-# Windows:
-.\venv\Scripts\activate
-# macOS/Linux:
-source venv/bin/activate
-
-pip install -r requirements.txt
-uvicorn main:app --reload
+.\venv\Scripts\python.exe -m pip install -r requirements.txt
 ```
 
-### 5. Start the frontend
-```bash
-cd frontend
-npm install
-npm run dev
+Configure `backend/.env` using `.env.example`. Keep an existing `.env`; do not overwrite your keys. `GROQ_API_KEY` enables chat. Set both `GEMINI_API_KEY` and `GEMINI_MODEL` to enable images. Select a model that your Google account currently supports; the app no longer hardcodes a retired vision model.
+
+```powershell
+# Terminal 1, in backend
+.\venv\Scripts\python.exe -m uvicorn main:app --host 127.0.0.1 --port 8001 --ws-max-size 2000000
+
+# Terminal 2, in frontend
+npm ci
+npm run dev -- --host 127.0.0.1
 ```
 
-Open **http://localhost:5173** in your browser.
+Open http://127.0.0.1:5173. The frontend proxies `/ws/chat` and `/health` to port 8001. Override `ALIA_API_URL` in the frontend process environment to use a different API port. If Vite uses another port, also add that exact frontend origin to `ALLOWED_ORIGINS` on the backend and restart it.
 
----
+## Features
 
-## 🎮 Usage
+- Drafts and images in IndexedDB; migration from the original localStorage chats after a successful save.
+- Search, rename, export, server-confirmed delete, copy messages, retry failed/interrupted turns, and stop generation.
+- Multiline messages, language preferences, voice replies, permission-triggered dictation, and camera capture in Live mode.
+- Lazy-loaded 3D avatar, keyboard-accessible dialogs, responsive layout, and reduced-motion styles.
+- Explicit AI identity, data-processing notice, and consent before sending a conversation.
+- Browser-scoped private identities, beta access codes, origin validation, bounded messages, usage limits, cancellation, and health checks.
 
-| Action | How |
-|---|---|
-| Type a message | Use the text box at the bottom |
-| Speak | Hold the 🎙️ **Hold to Speak** button, release to send |
-| Show webcam | Check **👁️ Enable Vision** → backend grabs a snapshot each message |
-| Share screen | Click **🖥️ Share Screen** → pick a window, backend grabs a frame |
+## Data model
 
----
+The active API writes only completed turns to `backend/data/alia.db`. Records are scoped to a SHA-256 digest of a random 256-bit browser secret. Request IDs make retries of completed turns idempotent. Image descriptions can appear in server history; image bytes are not stored there. Text is not written to general application logs.
 
-## 📁 Project Structure
+This is a device identity, not a user account. There is no password reset, multi-device sync, or server recovery after browser storage is cleared. The export contains conversation content, not identity secrets or access codes. Beta access codes stay in page memory and must be re-entered after reload.
 
-```
-ai-companion-hub/
-├── backend/
-│   ├── main.py          # FastAPI server, WebSocket, orchestration
-│   ├── db.py            # MongoDB async helpers
-│   ├── react_agent.py   # ReAct reasoning framework
-│   ├── test_memory.py   # Verify MongoDB storage
-│   ├── requirements.txt
-│   └── .env             # (gitignored) API keys
-├── frontend/
-│   └── src/
-│       ├── App.jsx       # Main chat + controls
-│       ├── Avatar.jsx    # 3D avatar (Three.js)
-│       └── App.css
-├── docker-compose.yml    # Local MongoDB
-├── .gitignore
-└── README.md
+The older `backend/memory.db`, `backend/data/chats.jsonl`, and optional MongoDB records are legacy archives. They are deliberately not automatically deleted or assigned to new owners. The old `database.py`, `db.py`, `react_agent.py`, and `test_memory.py` are no longer imported by the running app. Their optional dependencies are not in the active requirements. Review and retire legacy archives before any public launch. The new Delete action removes only that browser's conversation in the active database and its local copy. Backups and provider retention are separate.
+
+## Verification
+
+```powershell
+cd backend
+.\venv\Scripts\python.exe -m unittest test_app -v
+cd ../frontend
+npm run lint
+npm run build
 ```
 
----
+API tests replace providers with deterministic stubs and use temporary SQLite databases. They cover error completion, cancellation, request idempotency, ownership/deletion, origin/access checks, voice failure, and message/usage limits. They do not consume provider credits.
 
-## 🛠️ Tech Stack
+## Deployment
 
-- **Frontend**: React 18, Vite, Three.js, WebRTC
-- **Backend**: Python 3.12, FastAPI, Uvicorn
-- **AI**: Google Gemini 1.5 Pro, OpenAI Whisper, ElevenLabs
-- **Memory**: MongoDB 7.0, Motor (async driver), OpenAI text-embedding-ada-002
-- **Vision**: OpenCV, Browser Screen Capture API
+See [RELEASE.md](RELEASE.md) for the HTTPS Docker deployment, configuration, beta limitations, and remaining public-launch decisions.
 
----
-
-## 🔑 Environment Variables
-
-| Variable | Description |
-|---|---|
-| `GEMINI_API_KEY` | Google AI Studio API key |
-| `ELEVENLABS_API_KEY` | ElevenLabs TTS API key |
-| `OPENAI_API_KEY` | OpenAI embeddings API key |
-| `MONGODB_URI` | MongoDB connection string |
-| `MONGODB_DB` | Database name (default: `ai_companion`) |
-| `MONGODB_COLLECTION` | Collection name (default: `conversations`) |
-
----
-
-## 📜 License
-MIT
+Image handling uses the Google [generateContent REST API](https://ai.google.dev/api/generate-content). Speech input depends on browser/device support; speech output is an external Edge TTS service and should be evaluated for your release's availability requirements.

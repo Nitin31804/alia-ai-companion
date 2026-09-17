@@ -1,0 +1,36 @@
+services:
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    env_file: ./backend/.env
+    environment:
+      APP_ENV: production
+      ALLOWED_ORIGINS: https://${APP_DOMAIN:?Set APP_DOMAIN to your domain}
+      ALIA_DB_PATH: /app/data/alia.db
+    volumes:
+      - alia-data:/app/data
+    expose:
+      - "8000"
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    mem_limit: 512m
+  web:
+    build: ./frontend
+    restart: unless-stopped
+    environment:
+      APP_DOMAIN: ${APP_DOMAIN:?Set APP_DOMAIN to your domain}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      backend:
+        condition: service_healthy
+volumes:
+  alia-data:
+  caddy-data:
+  caddy-config:

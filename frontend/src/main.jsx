@@ -1,6 +1,7 @@
 import React from 'react'
 import { createRoot } from 'react-dom/client'
 import App from './App.jsx'
+import './index.css'
 
 class ErrorBoundary extends React.Component {
   constructor(props) {
@@ -12,9 +13,10 @@ class ErrorBoundary extends React.Component {
   }
   render() {
     if (this.state.hasError) {
-      return <div style={{ color: 'red', padding: '20px', background: 'white', wordWrap: 'break-word' }}>
-        <h2>App Crashed!</h2>
-        <pre>{this.state.error.toString()}</pre>
+      return <div className="boot-state">
+        <h1>Alia needs a moment</h1>
+        <p>Something went wrong. Your saved conversations have not been cleared.</p>
+        <button onClick={() => window.location.reload()}>Reload app</button>
       </div>;
     }
     return this.props.children;
