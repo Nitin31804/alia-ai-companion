@@ -34,6 +34,7 @@ export default function VoiceMode({ socket, isConnected, onBack, chatSessionId, 
   const browserRecognition = useRef(null)
   const recognitionMode = useRef(null)
   const transcriptRef = useRef('')
+  const recognitionStartedAt = useRef(null)
   const activeTurnId = useRef(null)
   const mounted = useRef(true)
   const sentTranscript = useRef(false)
@@ -83,13 +84,18 @@ export default function VoiceMode({ socket, isConnected, onBack, chatSessionId, 
     if (!mounted.current || sentTranscript.current) return
     sentTranscript.current = true
     if (!finalText || !isConnected) {
+      recognitionStartedAt.current = null
       setStatus(isConnected ? 'Tap to talk' : 'Offline')
       return
     }
 
     const frame = isCameraOn ? captureVideoFrame(videoRef.current) : null
     setAiSubtitle('')
-    const turnId = onSend(finalText, frame, true)
+    const speechRecognitionMs = recognitionStartedAt.current === null
+      ? null
+      : Math.max(0, performance.now() - recognitionStartedAt.current)
+    recognitionStartedAt.current = null
+    const turnId = onSend(finalText, frame, true, null, { speechRecognitionMs })
     activeTurnId.current = turnId
     setStatus(turnId ? 'Thinking' : 'Could not send. Check the connection or finish the current reply.')
   }
@@ -125,10 +131,12 @@ export default function VoiceMode({ socket, isConnected, onBack, chatSessionId, 
     recognition.continuous = false
 
     recognition.onstart = () => {
+      recognitionStartedAt.current = performance.now()
       sentTranscript.current = false
       transcriptRef.current = ''
       setUserSubtitle('')
       setAiSubtitle('')
+      setEmotion('neutral')
       setIsListening(true)
       setStatus('Listening')
     }
@@ -167,8 +175,10 @@ export default function VoiceMode({ socket, isConnected, onBack, chatSessionId, 
       sentTranscript.current = false
       transcriptRef.current = ''
       recognitionMode.current = 'capacitor'
+      recognitionStartedAt.current = performance.now()
       setUserSubtitle('')
       setAiSubtitle('')
+      setEmotion('neutral')
       setIsListening(true)
       setStatus('Listening')
       await SpeechRecognition.start({
@@ -260,6 +270,9 @@ export default function VoiceMode({ socket, isConnected, onBack, chatSessionId, 
 
       if (data.type === 'text_complete') {
         setStatus('Preparing voice')
+      }
+      if (data.type === 'emotion' && ['neutral', 'happy', 'sad', 'angry'].includes(data.value)) {
+        setEmotion(data.value)
       }
       if (data.type === 'error' || data.type === 'warning') setStatus(data.content)
       if (data.type === 'text_stream_end' && !isPlayingAudio.current) setStatus(data.status === 'complete' ? 'Tap to talk' : 'Reply stopped. Tap to try again.')
