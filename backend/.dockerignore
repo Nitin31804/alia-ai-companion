@@ -2,3 +2,5 @@
 !requirements.txt
 !main.py
 !storage.py
+!providers.py
+!observability.py

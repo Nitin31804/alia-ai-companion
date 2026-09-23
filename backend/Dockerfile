@@ -3,7 +3,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
 WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt && useradd --create-home alia
-COPY main.py storage.py ./
+COPY main.py storage.py providers.py observability.py ./
 RUN mkdir /app/data && chown alia:alia /app/data
 USER alia
 EXPOSE 8000

@@ -6,11 +6,10 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from fastapi.testclient import TestClient
-from starlette.websockets import WebSocketDisconnect
-
 import main
 import storage
+from fastapi.testclient import TestClient
+from starlette.websockets import WebSocketDisconnect
 
 
 async def reply(history):
@@ -22,7 +21,14 @@ class ApiTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.sockets = []
-        self.env = patch.dict(os.environ, {'ALIA_DB_PATH': str(Path(self.temp.name) / 'test.db'), 'APP_ENV': 'development'})
+        self.env = patch.dict(
+            os.environ,
+            {
+                'ALIA_DB_PATH': str(Path(self.temp.name) / 'test.db'),
+                'ALIA_RETENTION_DAYS': '30',
+                'APP_ENV': 'development',
+            },
+        )
         self.env.start()
         self.token = patch.object(main, 'BETA_TOKEN', '')
         self.token.start()
@@ -58,7 +64,24 @@ class ApiTests(unittest.TestCase):
                 return events
 
     def test_health(self):
-        self.assertEqual(self.client.get('/health').json()['status'], 'ok')
+        body = self.client.get('/health').json()
+        self.assertEqual(body['status'], 'ok')
+        self.assertEqual(body['retention_days'], 30)
+        self.assertEqual(body['providers']['chat'], 'groq')
+
+    def test_metrics_and_emotion_are_emitted(self):
+        async def supportive_reply(history):
+            yield 'I am glad this is going well.'
+
+        with patch.object(main, 'stream_reply', supportive_reply):
+            socket = self.connect()
+            socket.send_json(self.message(speech_recognition_ms=250))
+            events = self.collect(socket)
+
+        self.assertTrue(any(event.get('type') == 'emotion' and event.get('value') == 'happy' for event in events))
+        metrics = self.client.get('/metrics').text
+        self.assertIn('alia_chat_turns_total', metrics)
+        self.assertIn('alia_speech_recognition_seconds_count', metrics)
 
     def test_stream_ids_and_retry_are_idempotent(self):
         with patch.object(main, 'stream_reply', reply):
@@ -144,6 +167,18 @@ class ApiTests(unittest.TestCase):
         events = self.collect(socket)
         self.assertEqual(events[0]['type'], 'error')
         self.assertEqual(events[-1]['status'], 'error')
+
+    def test_retention_removes_expired_turns(self):
+        with storage.connection() as db:
+            db.execute(
+                "INSERT INTO turns(owner,chat,request,user,assistant,created_at) VALUES (?,?,?,?,?,?)",
+                ('owner', 'old-chat', 'old-turn', 'old', 'old', '2000-01-01 00:00:00'),
+            )
+        with patch.dict(os.environ, {'ALIA_RETENTION_DAYS': '1'}):
+            storage.init_db()
+        with storage.connection() as db:
+            count = db.execute("SELECT COUNT(*) FROM turns WHERE chat='old-chat'").fetchone()[0]
+        self.assertEqual(count, 0)
 
 
 if __name__ == '__main__':

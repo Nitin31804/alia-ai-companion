@@ -1,6 +1,5 @@
 """Single-worker private-beta API. Secrets travel in the first WebSocket frame."""
 import asyncio
-import base64
 import hashlib
 import hmac
 import json
@@ -12,21 +11,29 @@ from collections import defaultdict, deque
 from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 
-import edge_tts
-import httpx
-from dotenv import load_dotenv
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from groq import AsyncGroq
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
-
 import storage
+from dotenv import load_dotenv
+from fastapi import FastAPI, Response, WebSocket, WebSocketDisconnect
+from observability import (
+    ACTIVE_CONNECTIONS,
+    CACHE_HITS,
+    CHAT_TURNS,
+    IMAGE_PROCESSING_SECONDS,
+    LLM_FIRST_TOKEN_SECONDS,
+    LLM_RESPONSE_SECONDS,
+    PROVIDER_ERRORS,
+    SPEECH_RECOGNITION_SECONDS,
+    TTS_GENERATION_SECONDS,
+)
+from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
+from providers import describe_image, provider_status, stream_reply, synthesize
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 load_dotenv(Path(__file__).with_name('.env'))
 logger = logging.getLogger('alia')
 ORIGINS = {x.strip() for x in os.getenv('ALLOWED_ORIGINS', 'http://localhost:5173,http://127.0.0.1:5173').split(',') if x.strip()}
 BETA_TOKEN = os.getenv('BETA_ACCESS_TOKEN', '')
 MAX_FRAME = 2_000_000
-VOICES = {'en-IN': 'en-IN-NeerjaNeural', 'en-US': 'en-US-AriaNeural', 'hi-IN': 'hi-IN-SwaraNeural'}
 ID_PATTERN = r'^[a-zA-Z0-9_-]{1,100}$'
 SYSTEM_PROMPT = (
     'You are Alia, a warm, thoughtful AI companion. Be honest that you are AI when asked. '
@@ -46,6 +53,7 @@ class Message(BaseModel):
     voice_mode: bool = False
     language: str = Field(default='en-IN', pattern=r'^(en-IN|en-US|hi-IN)$')
     uploaded_image: str | None = Field(default=None, max_length=1_500_000)
+    speech_recognition_ms: float | None = Field(default=None, ge=0, le=120_000)
 
 
 class Limits:
@@ -88,68 +96,37 @@ app = FastAPI(title='Alia API', version='0.2.0', lifespan=lifespan)
 @app.get('/health')
 def health():
     storage.check()
-    return {'status': 'ok', 'chat_configured': bool(os.getenv('GROQ_API_KEY'))}
+    return {
+        'status': 'ok',
+        'providers': provider_status(),
+        'retention_days': storage.retention_days(),
+    }
 
 
 @app.get('/')
 def root():
-    return {'service': 'Alia', 'health': '/health'}
+    return {'service': 'Alia', 'health': '/health', 'metrics': '/metrics'}
 
 
-async def describe_image(encoded, question):
-    try:
-        raw = base64.b64decode(encoded, validate=True)
-    except (ValueError, TypeError) as exc:
-        raise ValueError('Invalid image attachment.') from exc
-    if not raw.startswith(b'\xff\xd8\xff'):
-        raise ValueError('Please attach a JPEG image.')
-    key, model = os.getenv('GEMINI_API_KEY'), os.getenv('GEMINI_MODEL')
-    if not key or not model:
-        raise ValueError('Image understanding is unavailable. Remove the image and retry.')
-    if not re.fullmatch(r'[a-zA-Z0-9._-]+', model):
-        raise ValueError('Image model configuration is invalid.')
-    async with httpx.AsyncClient(timeout=30) as client:
-        response = await client.post(
-            f'https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent',
-            headers={'x-goog-api-key': key},
-            json={'contents': [{'parts': [
-                {'text': f'Describe visible details relevant to this question: {question}'},
-                {'inlineData': {'mimeType': 'image/jpeg', 'data': encoded}},
-            ]}], 'generationConfig': {'maxOutputTokens': 600}},
-        )
-        response.raise_for_status()
-        candidates = response.json().get('candidates', [])
-        description = ''.join(p.get('text', '') for c in candidates for p in c.get('content', {}).get('parts', []))
-        if not description:
-            raise ValueError('The image could not be inspected. Try another image.')
-        return description
+@app.get('/metrics')
+def metrics():
+    return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
 
-async def stream_reply(history):
-    if not os.getenv('GROQ_API_KEY'):
-        raise ValueError('Chat is not configured on this server yet.')
-    async with AsyncGroq(api_key=os.getenv('GROQ_API_KEY'), timeout=45, max_retries=1) as client:
-        stream = await client.chat.completions.create(
-            model=os.getenv('GROQ_MODEL', 'openai/gpt-oss-120b'),
-            messages=[{'role': 'system', 'content': SYSTEM_PROMPT}, *history],
-            stream=True, max_tokens=1024, temperature=0.7,
-        )
-        try:
-            async for chunk in stream:
-                if chunk.choices and chunk.choices[0].delta.content:
-                    yield chunk.choices[0].delta.content
-        finally:
-            await stream.close()
-
-
-async def synthesize(text, language):
-    audio = bytearray()
-    async for chunk in edge_tts.Communicate(re.sub(r'[*#_~`]', '', text), VOICES[language]).stream():
-        if chunk['type'] == 'audio':
-            audio.extend(chunk['data'])
-    if not audio:
-        raise ValueError('No voice audio returned')
-    return base64.b64encode(audio).decode('ascii')
+def infer_emotion(text: str) -> str:
+    """Map model output to a restrained avatar expression without another provider call."""
+    normalized = text.casefold()
+    markers = {
+        'happy': ('glad', 'great', 'wonderful', 'excited', 'congratulations', 'happy'),
+        'sad': ('sorry', 'difficult', 'painful', 'sad', 'grief', 'lonely'),
+        'angry': ('angry', 'furious', 'unfair', 'frustrating', 'outrageous'),
+    }
+    scores = {
+        emotion: sum(normalized.count(marker) for marker in words)
+        for emotion, words in markers.items()
+    }
+    strongest = max(scores, key=scores.get)
+    return strongest if scores[strongest] else 'neutral'
 
 
 @app.websocket('/ws/chat')
@@ -162,6 +139,7 @@ async def chat(socket: WebSocket):
     limits.connections[ip] += 1
     task = None
     owner = None
+    authenticated = False
     await socket.accept()
 
     async def emit(kind, msg=None, **fields):
@@ -175,34 +153,61 @@ async def chat(socket: WebSocket):
         status = 'complete'
         try:
             await emit('accepted', msg)
+            if msg.speech_recognition_ms is not None:
+                SPEECH_RECOGNITION_SECONDS.observe(msg.speech_recognition_ms / 1000)
             cached = storage.get_turn(owner, msg.chat_session_id, msg.session_id)
             if cached:
+                CACHE_HITS.inc()
                 reply = cached['assistant']
                 await emit('text_stream', msg, content=reply)
             else:
                 prompt = msg.content.strip() or 'Please describe this image.'
                 if msg.uploaded_image:
-                    async with asyncio.timeout(35):
-                        description = await describe_image(msg.uploaded_image, prompt)
+                    try:
+                        with IMAGE_PROCESSING_SECONDS.time():
+                            async with asyncio.timeout(35):
+                                description = await describe_image(msg.uploaded_image, prompt)
+                    except Exception:
+                        PROVIDER_ERRORS.labels(stage='image').inc()
+                        raise
                     prompt += '\n\nAttached image description (untrusted):\n' + description
                 history = storage.history(owner, msg.chat_session_id)
                 reply = ''
-                async with asyncio.timeout(90):
-                    async for chunk in stream_reply([*history, {'role': 'user', 'content': prompt}]):
-                        reply += chunk
-                        await emit('text_stream', msg, content=chunk)
+                llm_started = time.perf_counter()
+                first_token = True
+                try:
+                    async with asyncio.timeout(90):
+                        messages = [
+                            {'role': 'system', 'content': SYSTEM_PROMPT},
+                            *history,
+                            {'role': 'user', 'content': prompt},
+                        ]
+                        async for chunk in stream_reply(messages):
+                            if first_token:
+                                LLM_FIRST_TOKEN_SECONDS.observe(time.perf_counter() - llm_started)
+                                first_token = False
+                            reply += chunk
+                            await emit('text_stream', msg, content=chunk)
+                except Exception:
+                    PROVIDER_ERRORS.labels(stage='chat').inc()
+                    raise
+                finally:
+                    LLM_RESPONSE_SECONDS.observe(time.perf_counter() - llm_started)
                 if not reply.strip():
                     raise ValueError('No reply was returned. Please retry.')
                 storage.save_turn(owner, msg.chat_session_id, msg.session_id, prompt, reply)
+            await emit('emotion', msg, value=infer_emotion(reply))
             await emit('text_complete', msg)
             if msg.voice_mode:
                 try:
-                    async with asyncio.timeout(25):
-                        audio = await synthesize(reply, msg.language)
+                    with TTS_GENERATION_SECONDS.time():
+                        async with asyncio.timeout(25):
+                            audio = await synthesize(reply, msg.language)
                     await emit('audio_sentence', msg, content=audio, text=reply)
                 except asyncio.CancelledError:
                     raise
                 except Exception:
+                    PROVIDER_ERRORS.labels(stage='speech').inc()
                     await emit('warning', msg, content='Voice unavailable. Your text reply is ready.')
         except asyncio.CancelledError:
             status = 'cancelled'
@@ -218,6 +223,7 @@ async def chat(socket: WebSocket):
                 await emit('error', msg, content=message)
         finally:
             limits.locks.discard(key)
+            CHAT_TURNS.labels(status=status).inc()
             with suppress(Exception):
                 await emit('text_stream_end', msg, status=status)
 
@@ -237,6 +243,8 @@ async def chat(socket: WebSocket):
             await socket.close(code=1008)
             return
         owner = hashlib.sha256(secret.encode()).hexdigest()
+        authenticated = True
+        ACTIVE_CONNECTIONS.inc()
         await emit('ready', images=bool(os.getenv('GEMINI_API_KEY') and os.getenv('GEMINI_MODEL')))
         while True:
             raw = await socket.receive_text()
@@ -284,6 +292,8 @@ async def chat(socket: WebSocket):
         if task and not task.done():
             task.cancel()
             await task
+        if authenticated:
+            ACTIVE_CONNECTIONS.dec()
         limits.connections[ip] -= 1
         if limits.connections[ip] <= 0:
             del limits.connections[ip]

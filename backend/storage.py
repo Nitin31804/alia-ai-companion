@@ -5,6 +5,16 @@ from contextlib import contextmanager
 from pathlib import Path
 
 
+def retention_days():
+    try:
+        days = int(os.getenv('ALIA_RETENTION_DAYS', '30'))
+    except ValueError as exc:
+        raise RuntimeError('ALIA_RETENTION_DAYS must be an integer.') from exc
+    if not 0 <= days <= 3650:
+        raise RuntimeError('ALIA_RETENTION_DAYS must be between 0 and 3650.')
+    return days
+
+
 @contextmanager
 def connection():
     path = Path(os.getenv('ALIA_DB_PATH', str(Path(__file__).parent / 'data' / 'alia.db')))
@@ -27,6 +37,12 @@ def init_db():
             created_at TEXT DEFAULT CURRENT_TIMESTAMP,
             UNIQUE(owner, chat, request))''')
         db.execute('CREATE INDEX IF NOT EXISTS owner_chat ON turns(owner, chat, id)')
+        days = retention_days()
+        if days:
+            db.execute(
+                "DELETE FROM turns WHERE created_at < datetime('now', ?)",
+                (f'-{days} days',),
+            )
 
 
 def check():
