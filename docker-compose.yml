@@ -1,14 +1,44 @@
-version: '3.8'
 services:
-  mongo:
-    image: mongo:7.0
-    container_name: ai-companion-mongo
+  backend:
+    build: ./backend
     restart: unless-stopped
-    ports:
-      - "27017:27017"
     environment:
-      MONGO_INITDB_DATABASE: ai_companion
+      APP_ENV: development
+      ALLOWED_ORIGINS: http://localhost:5173,http://127.0.0.1:5173
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+      GROQ_MODEL: ${GROQ_MODEL:-openai/gpt-oss-120b}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-}
+      BETA_ACCESS_TOKEN: ${BETA_ACCESS_TOKEN:-}
+      ALIA_DB_PATH: /app/data/alia.db
+      ALIA_RETENTION_DAYS: ${ALIA_RETENTION_DAYS:-30}
+    ports:
+      - "8000:8000"
     volumes:
-      - mongo-data:/data/db
+      - alia-data:/app/data
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    networks:
+      - alia-network
+
+  web:
+    build: ./frontend
+    restart: unless-stopped
+    environment:
+      APP_DOMAIN: ":80"
+    ports:
+      - "5173:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - alia-network
+
+networks:
+  alia-network:
+    driver: bridge
+
 volumes:
-  mongo-data:
+  alia-data:

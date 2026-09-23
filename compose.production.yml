@@ -2,11 +2,16 @@ services:
   backend:
     build: ./backend
     restart: unless-stopped
-    env_file: ./backend/.env
     environment:
       APP_ENV: production
       ALLOWED_ORIGINS: https://${APP_DOMAIN:?Set APP_DOMAIN to your domain}
       ALIA_DB_PATH: /app/data/alia.db
+      ALIA_RETENTION_DAYS: ${ALIA_RETENTION_DAYS:-30}
+      GROQ_API_KEY: ${GROQ_API_KEY:?Set GROQ_API_KEY}
+      GROQ_MODEL: ${GROQ_MODEL:-openai/gpt-oss-120b}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-}
+      BETA_ACCESS_TOKEN: ${BETA_ACCESS_TOKEN:?Set BETA_ACCESS_TOKEN}
     volumes:
       - alia-data:/app/data
     expose:
