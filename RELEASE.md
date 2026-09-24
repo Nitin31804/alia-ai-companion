@@ -6,7 +6,7 @@ This version supports an invitation-only web beta with browser-scoped histories 
 
 ## Production configuration
 
-1. Set real `GROQ_API_KEY` and `GROQ_MODEL` values in `backend/.env`. Set `GEMINI_API_KEY` and `GEMINI_MODEL` only if image understanding will be offered.
+1. Copy `.env.example` to `.env`, then set real `GROQ_API_KEY` and `GROQ_MODEL` values. Set `GEMINI_API_KEY` and `GEMINI_MODEL` only if image understanding will be offered. Choose `ALIA_RETENTION_DAYS` explicitly; the default is 30 days.
 2. Generate a random `BETA_ACCESS_TOKEN` of at least 32 characters, keep it out of Git, and share it only with invited testers. Never put server keys or the beta access token into `VITE_*` variables. Testers enter the code in Settings. Changing the token revokes new connections; restart the API to close existing connections.
 3. Point your domain's DNS at the deployment host. Open ports 80 and 443 for Caddy's HTTPS certificate flow. Keep port 8000 internal.
 4. Set `APP_DOMAIN` in your deployment environment, then run the commands below from the repository root.
@@ -30,7 +30,7 @@ Use one API worker/replica. Limits and active-conversation locks are in memory. 
 - Set provider budgets and alerts. Replace the shared invite code with managed authentication, revocable user access, and durable per-user quotas before an open public launch.
 - Verify the right to distribute `frontend/public/model.vrm`, portrait images, and other bundled assets; retain required attribution. A reference or downloaded asset is not proof of distribution rights.
 - Publish operator identity, support contact, privacy notice, terms, retention/deletion policy, and the intended audience. The in-app data notice describes implemented behavior; it is not a substitute for your operator-specific published policies.
-- Review existing `backend/memory.db`, `backend/data/chats.jsonl`, audio/image folders, and optional MongoDB archives. They are not part of the new scoped store and remain untouched.
+- Verify the configured retention interval and document how encrypted backups are expired when users delete conversations.
 - Define encrypted backup storage, retention, deletion propagation, restore procedures, and monitoring. Test restoring a copy, not the live database. SQLite's backup API can make a consistent snapshot while running; a simple copy of only `alia.db` during WAL activity is not a reliable backup.
 - Confirm your chosen speech provider's commercial usage, support, and availability suit the release. Native signing, app-store declarations, and device testing are separate release work.
 
