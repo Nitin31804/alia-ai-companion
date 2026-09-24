@@ -13,5 +13,9 @@ test('loads the real web and API containers with privacy controls', async ({ pag
   await page.getByRole('button', { name: 'Settings and privacy' }).first().click()
   await expect(page.getByRole('heading', { name: 'Your conversations & data' })).toBeVisible()
   await expect(page.getByText('I agree to this data processing.')).toBeVisible()
+  await page.screenshot({ path: 'test-results/alia-privacy.png', fullPage: true })
+
+  await page.getByRole('button', { name: 'Close dialog' }).click()
+  await expect(page.getByRole('heading', { name: 'Your conversations & data' })).toBeHidden()
   await page.screenshot({ path: 'test-results/alia-dashboard.png', fullPage: true })
 })

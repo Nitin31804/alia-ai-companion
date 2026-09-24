@@ -66,4 +66,5 @@ jobs:
           path: |
             container.log
             frontend/test-results/alia-dashboard.png
+            frontend/test-results/alia-privacy.png
             frontend/playwright-report/
