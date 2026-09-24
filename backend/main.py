@@ -14,6 +14,7 @@ from pathlib import Path
 import storage
 from dotenv import load_dotenv
 from fastapi import FastAPI, Response, WebSocket, WebSocketDisconnect
+from fastapi.responses import FileResponse
 from observability import (
     ACTIVE_CONNECTIONS,
     CACHE_HITS,
@@ -32,7 +33,11 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 load_dotenv(Path(__file__).with_name('.env'))
 logger = logging.getLogger('alia')
 ORIGINS = {x.strip() for x in os.getenv('ALLOWED_ORIGINS', 'http://localhost:5173,http://127.0.0.1:5173').split(',') if x.strip()}
+RENDER_ORIGIN = os.getenv('RENDER_EXTERNAL_URL', '').rstrip('/')
+if RENDER_ORIGIN:
+    ORIGINS.add(RENDER_ORIGIN)
 BETA_TOKEN = os.getenv('BETA_ACCESS_TOKEN', '')
+STATIC_DIR = Path(os.getenv('ALIA_STATIC_DIR', '')).resolve() if os.getenv('ALIA_STATIC_DIR') else None
 MAX_FRAME = 2_000_000
 ID_PATTERN = r'^[a-zA-Z0-9_-]{1,100}$'
 SYSTEM_PROMPT = (
@@ -93,6 +98,24 @@ async def lifespan(app):
 app = FastAPI(title='Alia API', version='0.2.0', lifespan=lifespan)
 
 
+@app.middleware('http')
+async def security_headers(request, call_next):
+    response = await call_next(request)
+    if STATIC_DIR:
+        response.headers.setdefault('X-Content-Type-Options', 'nosniff')
+        response.headers.setdefault('Referrer-Policy', 'strict-origin-when-cross-origin')
+        response.headers.setdefault('X-Frame-Options', 'DENY')
+        response.headers.setdefault('Permissions-Policy', 'camera=(self), microphone=(self), geolocation=()')
+        response.headers.setdefault('Strict-Transport-Security', 'max-age=31536000')
+        response.headers.setdefault(
+            'Content-Security-Policy',
+            "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
+            "img-src 'self' data: blob:; media-src 'self' data: blob:; connect-src 'self'; "
+            "worker-src 'self' blob:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'",
+        )
+    return response
+
+
 @app.get('/health')
 def health():
     storage.check()
@@ -103,8 +126,10 @@ def health():
     }
 
 
-@app.get('/')
+@app.get('/', include_in_schema=False)
 def root():
+    if STATIC_DIR and (STATIC_DIR / 'index.html').is_file():
+        return FileResponse(STATIC_DIR / 'index.html', headers={'Cache-Control': 'no-cache'})
     return {'service': 'Alia', 'health': '/health', 'metrics': '/metrics'}
 
 
@@ -297,3 +322,13 @@ async def chat(socket: WebSocket):
         limits.connections[ip] -= 1
         if limits.connections[ip] <= 0:
             del limits.connections[ip]
+
+
+if STATIC_DIR:
+    @app.get('/{asset_path:path}', include_in_schema=False)
+    def frontend_asset(asset_path: str):
+        candidate = (STATIC_DIR / asset_path).resolve()
+        if STATIC_DIR in candidate.parents and candidate.is_file():
+            cache = 'public, max-age=31536000, immutable' if asset_path.startswith('assets/') else 'no-cache'
+            return FileResponse(candidate, headers={'Cache-Control': cache})
+        return FileResponse(STATIC_DIR / 'index.html', headers={'Cache-Control': 'no-cache'})

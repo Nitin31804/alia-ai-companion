@@ -1,5 +1,14 @@
 # Release preparation
 
+## Free interview demo
+
+`render.yaml` defines a single free web service built with `Dockerfile.render`. The image
+serves the compiled React application and FastAPI/WebSocket API from one managed HTTPS
+origin. Set `GROQ_API_KEY` and a random 32-character-or-longer `BETA_ACCESS_TOKEN` during
+Blueprint creation. The demo uses one free instance and `/tmp/alia/alia.db`; its history
+is intentionally ephemeral and can disappear after idle shutdown, restart, or redeploy.
+Do not present it as durable production hosting.
+
 ## Current release scope
 
 This version supports an invitation-only web beta with browser-scoped histories and a shared beta access code. It is not yet a general multi-user account service or a store-ready Android release. No deployment has been published by this change.

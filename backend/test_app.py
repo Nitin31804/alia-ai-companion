@@ -69,6 +69,17 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(body['retention_days'], 30)
         self.assertEqual(body['providers']['chat'], 'groq')
 
+    def test_embedded_frontend_has_security_headers(self):
+        static_dir = Path(self.temp.name) / 'static'
+        static_dir.mkdir()
+        (static_dir / 'index.html').write_text('<h1>Alia</h1>', encoding='utf-8')
+        with patch.object(main, 'STATIC_DIR', static_dir):
+            response = self.client.get('/')
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('<h1>Alia</h1>', response.text)
+        self.assertEqual(response.headers['x-frame-options'], 'DENY')
+        self.assertIn("connect-src 'self'", response.headers['content-security-policy'])
+
     def test_metrics_and_emotion_are_emitted(self):
         async def supportive_reply(history):
             yield 'I am glad this is going well.'

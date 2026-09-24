@@ -35,6 +35,16 @@ jobs:
         working-directory: frontend
       - run: npm run build
         working-directory: frontend
+      - name: Build the single-service interview demo image
+        run: docker build -f Dockerfile.render -t alia-render .
+      - name: Verify the interview demo image
+        run: |
+          docker run -d --name alia-render-test -p 10000:10000 -e APP_ENV=development alia-render
+          curl --fail --retry 20 --retry-delay 2 --retry-all-errors http://127.0.0.1:10000/
+          curl --fail http://127.0.0.1:10000/health
+      - name: Stop the interview demo image
+        if: always()
+        run: docker rm -f alia-render-test || true
   end-to-end:
     runs-on: ubuntu-latest
     timeout-minutes: 20
