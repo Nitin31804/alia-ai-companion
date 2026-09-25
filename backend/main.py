@@ -159,7 +159,7 @@ async def chat(socket: WebSocket):
     origin = socket.headers.get('origin')
     ip = socket.client.host if socket.client else 'unknown'
     if origin not in ORIGINS or limits.connections[ip] >= 8 or not limits.allow(('connect', ip), 30):
-        logger.warning(f'Rejecting WebSocket. Origin: {origin}, IP: {ip}, ORIGINS: {ORIGINS}'); await socket.close(code=1008)
+        print(f'Rejecting WebSocket. Origin: {origin}, IP: {ip}, ORIGINS: {ORIGINS}', flush=True); await socket.close(code=1008)
         return
     limits.connections[ip] += 1
     task = None
@@ -255,17 +255,17 @@ async def chat(socket: WebSocket):
     try:
         raw = await asyncio.wait_for(socket.receive_text(), timeout=10)
         if len(raw) > 4096:
-            logger.warning(f'Rejecting WebSocket. Origin: {origin}, IP: {ip}, ORIGINS: {ORIGINS}'); await socket.close(code=1008)
+            print(f'Rejecting WebSocket. Origin: {origin}, IP: {ip}, ORIGINS: {ORIGINS}', flush=True); await socket.close(code=1008)
             return
         auth = json.loads(raw)
         secret = auth.get('client_secret', '') if isinstance(auth, dict) else ''
         token = auth.get('access_token', '') if isinstance(auth, dict) else ''
         if not isinstance(secret, str) or not re.fullmatch(r'[a-f0-9]{64}', secret) or not isinstance(token, str):
-            logger.warning(f'Rejecting WebSocket. Origin: {origin}, IP: {ip}, ORIGINS: {ORIGINS}'); await socket.close(code=1008)
+            print(f'Rejecting WebSocket. Origin: {origin}, IP: {ip}, ORIGINS: {ORIGINS}', flush=True); await socket.close(code=1008)
             return
         if BETA_TOKEN and not hmac.compare_digest(token, BETA_TOKEN):
             await emit('auth_error', content='Enter a valid beta access code in Settings.')
-            logger.warning(f'Rejecting WebSocket. Origin: {origin}, IP: {ip}, ORIGINS: {ORIGINS}'); await socket.close(code=1008)
+            print(f'Rejecting WebSocket. Origin: {origin}, IP: {ip}, ORIGINS: {ORIGINS}', flush=True); await socket.close(code=1008)
             return
         owner = hashlib.sha256(secret.encode()).hexdigest()
         authenticated = True
