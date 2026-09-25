@@ -82,23 +82,23 @@ docker compose down
 The application still starts without provider keys, allowing the UI, privacy controls,
 storage, health, and WebSocket handshake to be tested without spending provider credits.
 
-## Managed HTTPS interview demo
+## Live HTTPS Demo (Back4App)
 
-The repository includes a Render Blueprint and a single-service Docker image that serves
+The repository includes a Back4App deployment and a single-service Docker image that serves
 the compiled React application and FastAPI/WebSocket API from the same HTTPS origin.
-Render's free web-service plan is suitable for an interview demonstration and requires
+Back4App's free container plan is suitable for an interview demonstration and requires
 no always-on instance.
 
-[**Open the live HTTPS demo**](https://alia-ai-companion.onrender.com) — invited viewers
+[**Open the live HTTPS demo**](https://aliaaicompanion-ml1t2rf1.b4a.run) — invited viewers
 need the private beta access code. The service may take about a minute to wake after it
 has been idle.
 
-[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/Nitin31804/alia-ai-companion)
+> **Note:** This app is successfully deployed on Back4App Containers.
 
-During Blueprint creation, enter `GROQ_API_KEY` and a random
+During Back4App Container setup, enter `GROQ_API_KEY` and a random
 `BETA_ACCESS_TOKEN` containing at least 32 characters. The access token is entered by
 invited viewers in Settings; it is never compiled into the frontend. The service uses
-Render's generated HTTPS URL as its allowed WebSocket origin.
+Back4App's generated HTTPS URL as its allowed WebSocket origin.
 
 This free demo deliberately stores SQLite data on ephemeral storage. Conversations can
 disappear after a restart, redeploy, or idle shutdown. That is acceptable for a
@@ -181,7 +181,7 @@ controlled measurement procedure and reporting rules.
 - SQLite, in-process rate limits, and active-turn locks do not support horizontal scaling.
   A scaled version would require PostgreSQL, shared limits/state such as Redis, and real
   account authentication.
-- The free Render interview deployment uses ephemeral SQLite storage and can take about
+- The free Back4App interview deployment uses ephemeral SQLite storage and can take about
   a minute to wake after being idle; it is demonstration infrastructure, not production.
 - Browser/device speech recognition availability and privacy behavior vary by platform.
 - Avatar emotion uses a documented keyword heuristic, and lip movement is procedural
