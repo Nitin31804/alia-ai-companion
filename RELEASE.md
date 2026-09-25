@@ -2,17 +2,19 @@
 
 ## Free interview demo
 
-`render.yaml` defines a single free web service built with `Dockerfile.render`. The image
-serves the compiled React application and FastAPI/WebSocket API from one managed HTTPS
-origin. Set `GROQ_API_KEY` and a random 32-character-or-longer `BETA_ACCESS_TOKEN` during
-Blueprint creation. The demo uses one free instance and `/tmp/alia/alia.db`; its history
-is intentionally ephemeral and can disappear after idle shutdown, restart, or redeploy.
-Do not present it as durable production hosting.
+The active interview deployment is
+[aliaaicompanion-0mjcdf7r.b4a.run](https://aliaaicompanion-0mjcdf7r.b4a.run) on Back4App.
+The root `Dockerfile` serves the compiled React application and FastAPI/WebSocket API from
+one managed HTTPS origin. The root page, `/health` response, configured Groq provider,
+and security headers were verified on September 25, 2026.
 
-The verified interview deployment is available at
-[alia-ai-companion.onrender.com](https://alia-ai-companion.onrender.com). Its root page,
-`/health` response, production startup checks, and security headers were validated for
-the `v1.1.0` release.
+Set `GROQ_API_KEY`, an exact `ALLOWED_ORIGINS` host, and a random
+32-character-or-longer `BETA_ACCESS_TOKEN` in the Back4App container environment. The
+demo stores `/tmp/alia/alia.db` on ephemeral storage; history can disappear after a
+restart or redeploy. Do not present it as durable production hosting.
+
+`render.yaml` remains a tested alternative deployment definition and uses the same root
+`Dockerfile`; it is not the active hosting platform.
 
 ## Current release scope
 

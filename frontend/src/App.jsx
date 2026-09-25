@@ -112,7 +112,7 @@ function Workspace({ initial }) {
       catch (error) { setNotice(error.message); setConnection('offline'); return }
       socketRef.current = current
       setSocket(current)
-      authTimer = setTimeout(() => current.close(), 60000)
+      authTimer = setTimeout(() => current.close(), 12000)
       current.onopen = () => current.send(JSON.stringify({ type: 'auth', client_secret: dataRef.current.secrets[data.settings.server], access_token: token }))
       current.onmessage = event => {
         if (disposed || socketRef.current !== current) return

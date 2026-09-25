@@ -10,6 +10,7 @@ import time
 from collections import defaultdict, deque
 from contextlib import asynccontextmanager, suppress
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import storage
 from dotenv import load_dotenv
@@ -32,10 +33,46 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 load_dotenv(Path(__file__).with_name('.env'))
 logger = logging.getLogger('alia')
-ORIGINS = {(x.strip().rstrip('/') if x.strip().startswith('http') else 'https://' + x.strip().rstrip('/')) for x in os.getenv('ALLOWED_ORIGINS', 'http://localhost:5173,http://127.0.0.1:5173').split(',') if x.strip()}
+
+
+def normalize_origin(value):
+    raw = value.strip().rstrip('/')
+    if not raw:
+        return None
+    if '://' not in raw:
+        raw = f'https://{raw}'
+    parsed = urlsplit(raw)
+    try:
+        port = parsed.port
+    except ValueError as exc:
+        raise RuntimeError(f'Invalid origin: {value!r}') from exc
+    if (
+        parsed.scheme not in {'http', 'https'}
+        or not parsed.hostname
+        or parsed.username
+        or parsed.password
+        or parsed.path
+        or parsed.query
+        or parsed.fragment
+    ):
+        raise RuntimeError(f'Invalid origin: {value!r}')
+    host = parsed.hostname.lower()
+    if ':' in host:
+        host = f'[{host}]'
+    netloc = f'{host}:{port}' if port else host
+    return f'{parsed.scheme.lower()}://{netloc}'
+
+
+def parse_origins(value):
+    return {origin for item in value.split(',') if (origin := normalize_origin(item))}
+
+
+ORIGINS = parse_origins(
+    os.getenv('ALLOWED_ORIGINS', 'http://localhost:5173,http://127.0.0.1:5173')
+)
 RENDER_ORIGIN = os.getenv('RENDER_EXTERNAL_URL', '').rstrip('/')
 if RENDER_ORIGIN:
-    ORIGINS.add(RENDER_ORIGIN)
+    ORIGINS.add(normalize_origin(RENDER_ORIGIN))
 BETA_TOKEN = os.getenv('BETA_ACCESS_TOKEN', '')
 STATIC_DIR = Path(os.getenv('ALIA_STATIC_DIR', '')).resolve() if os.getenv('ALIA_STATIC_DIR') else None
 MAX_FRAME = 2_000_000
@@ -158,8 +195,19 @@ def infer_emotion(text: str) -> str:
 async def chat(socket: WebSocket):
     origin = socket.headers.get('origin')
     ip = socket.client.host if socket.client else 'unknown'
-    if origin not in ORIGINS or limits.connections[ip] >= 8 or not limits.allow(('connect', ip), 30):
-        print(f'Rejecting WebSocket. Origin: {origin}, IP: {ip}, ORIGINS: {ORIGINS}', flush=True); await socket.close(code=1008)
+
+    async def reject(reason):
+        logger.warning('WebSocket rejected (%s)', reason)
+        await socket.close(code=1008)
+
+    if origin not in ORIGINS:
+        await reject('origin not allowed')
+        return
+    if limits.connections[ip] >= 8:
+        await reject('connection limit')
+        return
+    if not limits.allow(('connect', ip), 30):
+        await reject('connection rate limit')
         return
     limits.connections[ip] += 1
     task = None
@@ -255,17 +303,17 @@ async def chat(socket: WebSocket):
     try:
         raw = await asyncio.wait_for(socket.receive_text(), timeout=10)
         if len(raw) > 4096:
-            print(f'Rejecting WebSocket. Origin: {origin}, IP: {ip}, ORIGINS: {ORIGINS}', flush=True); await socket.close(code=1008)
+            await reject('authentication frame too large')
             return
         auth = json.loads(raw)
         secret = auth.get('client_secret', '') if isinstance(auth, dict) else ''
         token = auth.get('access_token', '') if isinstance(auth, dict) else ''
         if not isinstance(secret, str) or not re.fullmatch(r'[a-f0-9]{64}', secret) or not isinstance(token, str):
-            print(f'Rejecting WebSocket. Origin: {origin}, IP: {ip}, ORIGINS: {ORIGINS}', flush=True); await socket.close(code=1008)
+            await reject('invalid authentication payload')
             return
         if BETA_TOKEN and not hmac.compare_digest(token, BETA_TOKEN):
             await emit('auth_error', content='Enter a valid beta access code in Settings.')
-            print(f'Rejecting WebSocket. Origin: {origin}, IP: {ip}, ORIGINS: {ORIGINS}', flush=True); await socket.close(code=1008)
+            await reject('invalid beta access code')
             return
         owner = hashlib.sha256(secret.encode()).hexdigest()
         authenticated = True

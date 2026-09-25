@@ -69,6 +69,22 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(body['retention_days'], 30)
         self.assertEqual(body['providers']['chat'], 'groq')
 
+    def test_allowed_origins_are_normalized_and_validated(self):
+        origins = main.parse_origins(
+            ' Example.B4A.run/,https://ALIA.EXAMPLE.COM/,http://127.0.0.1:5173 '
+        )
+        self.assertEqual(
+            origins,
+            {
+                'https://example.b4a.run',
+                'https://alia.example.com',
+                'http://127.0.0.1:5173',
+            },
+        )
+        for value in ('ftp://example.com', 'https://example.com/path', 'https://user@example.com'):
+            with self.subTest(value=value), self.assertRaises(RuntimeError):
+                main.parse_origins(value)
+
     def test_embedded_frontend_has_security_headers(self):
         static_dir = Path(self.temp.name) / 'static'
         static_dir.mkdir()

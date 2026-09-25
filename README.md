@@ -60,7 +60,7 @@ Edge TTS receives completed reply text only when voice output is requested.
 - Providers: Groq chat, optional Gemini image understanding, Edge TTS, browser/device
   speech recognition.
 - Operations: Docker Compose, Caddy, Prometheus client metrics, GitHub Actions,
-  Playwright, Vitest, Oxlint, Ruff.
+  Playwright, Vitest, Oxlint, Ruff, and a Back4App container deployment.
 
 ## One-command local setup
 
@@ -81,6 +81,21 @@ docker compose down
 
 The application still starts without provider keys, allowing the UI, privacy controls,
 storage, health, and WebSocket handshake to be tested without spending provider credits.
+
+## Live HTTPS interview demo
+
+[**Open Alia on Back4App**](https://aliaaicompanion-0mjcdf7r.b4a.run) — invited viewers
+need the private beta access code in Settings before chat is enabled.
+
+The live demo runs the repository's root `Dockerfile`, serving the compiled React app and
+FastAPI/WebSocket API from one HTTPS origin. `GROQ_API_KEY`, `BETA_ACCESS_TOKEN`, and
+`ALLOWED_ORIGINS` are server-side environment variables and are never compiled into the
+frontend. The checked-in `render.yaml` is an optional alternative deployment definition;
+it is not the hosting platform claimed for the active demo.
+
+Back4App currently reports a healthy Groq chat provider through `/health`. The demo uses
+ephemeral SQLite storage, so conversations may disappear after a restart or redeploy.
+Treat it as controlled interview infrastructure rather than durable production hosting.
 
 ## Manual development
 
@@ -174,6 +189,8 @@ backend/                 FastAPI WebSocket API, providers, storage, metrics, tes
 frontend/src/            React workspace, voice mode, VRM avatar, unit tests
 frontend/e2e/            Playwright container-level browser test
 frontend/android/        Capacitor Android shell
+Dockerfile               Shared image for Back4App and optional Render deployment
+render.yaml              Optional free-tier Render Blueprint
 compose.production.yml   Caddy-managed HTTPS private-beta deployment
 .github/workflows/       Automated verification and evidence capture
 ```
