@@ -117,8 +117,8 @@ export default function VrmAvatar({ isSpeaking, emotion }) {
     <div style={{ width: '100%', height: '100%', pointerEvents: 'none', zIndex: 5 }}>
       {(!vrm || failed) && <div className="avatar-fallback"><img src="/elara_new.jpg" alt="Alia avatar" /><span>{failed ? 'Avatar unavailable' : 'Loading avatar...'}</span></div>}
       {/* Zoomed in closer to Z=3.1 and tilted slightly down to perfectly fit her large on a portrait mobile screen */}
-      <Canvas flat camera={{ position: [0, -0.1, 3.1], fov: 40 }} gl={{ alpha: true }}>
-        <ambientLight intensity={1.5} color="#ffffff" />
+      <Canvas camera={{ position: [0, -0.1, 3.1], fov: 40 }} gl={{ alpha: true }}>
+        <ambientLight intensity={Math.PI} color="#ffffff" />
         <directionalLight position={[1, 2, 1]} intensity={1} color="#ffffff" />
         {vrm && <AvatarModel vrm={vrm} isSpeaking={isSpeaking} emotion={emotion} />}
       </Canvas>
