@@ -85,6 +85,19 @@ class ApiTests(unittest.TestCase):
             with self.subTest(value=value), self.assertRaises(RuntimeError):
                 main.parse_origins(value)
 
+    def test_current_https_host_is_allowed_without_weakening_cross_origin_checks(self):
+        with patch.object(main, 'ORIGINS', {'https://configured.example.com'}):
+            self.assertTrue(
+                main.origin_is_allowed('https://configured.example.com', 'different.example.com')
+            )
+            self.assertTrue(
+                main.origin_is_allowed('https://rotating.b4a.run', 'rotating.b4a.run:443')
+            )
+            self.assertFalse(
+                main.origin_is_allowed('https://attacker.example.com', 'rotating.b4a.run')
+            )
+            self.assertFalse(main.origin_is_allowed('null', 'rotating.b4a.run'))
+
     def test_embedded_frontend_has_security_headers(self):
         static_dir = Path(self.temp.name) / 'static'
         static_dir.mkdir()

@@ -82,20 +82,24 @@ docker compose down
 The application still starts without provider keys, allowing the UI, privacy controls,
 storage, health, and WebSocket handshake to be tested without spending provider credits.
 
-## Live HTTPS interview demo
+## Back4App interview deployment
 
-[**Open Alia on Back4App**](https://aliaaicompanion-0mjcdf7r.b4a.run) — invited viewers
-need the private beta access code in Settings before chat is enabled.
+The repository's root `Dockerfile` has been verified on Back4App, serving the compiled
+React app and FastAPI/WebSocket API from one HTTPS origin. The free plan issues a rotating
+temporary URL that expires after 60 minutes, so this README intentionally does not publish
+it as a permanent live demo. Redeploy from the Back4App dashboard immediately before a
+demonstration, or attach a permanent domain on an appropriate hosting plan.
 
-The live demo runs the repository's root `Dockerfile`, serving the compiled React app and
-FastAPI/WebSocket API from one HTTPS origin. `GROQ_API_KEY`, `BETA_ACCESS_TOKEN`, and
-`ALLOWED_ORIGINS` are server-side environment variables and are never compiled into the
-frontend. The checked-in `render.yaml` is an optional alternative deployment definition;
-it is not the hosting platform claimed for the active demo.
+`GROQ_API_KEY`, `BETA_ACCESS_TOKEN`, and `ALLOWED_ORIGINS` are server-side environment
+variables and are never compiled into the frontend. The WebSocket accepts an explicitly
+configured origin or the deployment's own HTTPS host, allowing Back4App preview addresses
+to rotate without weakening cross-origin checks. Invited viewers still need the private
+beta access code in Settings before chat is enabled.
 
-Back4App currently reports a healthy Groq chat provider through `/health`. The demo uses
-ephemeral SQLite storage, so conversations may disappear after a restart or redeploy.
-Treat it as controlled interview infrastructure rather than durable production hosting.
+The free preview uses ephemeral SQLite storage, so conversations may disappear after a
+restart or redeploy. Treat it as controlled interview infrastructure rather than durable
+production hosting. The checked-in `render.yaml` is an optional alternative deployment
+definition, not the active hosting platform.
 
 ## Manual development
 

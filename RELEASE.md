@@ -2,16 +2,19 @@
 
 ## Free interview demo
 
-The active interview deployment is
-[aliaaicompanion-0mjcdf7r.b4a.run](https://aliaaicompanion-0mjcdf7r.b4a.run) on Back4App.
-The root `Dockerfile` serves the compiled React application and FastAPI/WebSocket API from
-one managed HTTPS origin. The root page, `/health` response, configured Groq provider,
-and security headers were verified on September 25, 2026.
+The root `Dockerfile` has been verified on Back4App, serving the compiled React application
+and FastAPI/WebSocket API from one managed HTTPS origin. The root page, `/health` response,
+configured Groq provider, beta gate, and security headers were verified on September 25,
+2026.
 
 Set `GROQ_API_KEY`, an exact `ALLOWED_ORIGINS` host, and a random
 32-character-or-longer `BETA_ACCESS_TOKEN` in the Back4App container environment. The
 demo stores `/tmp/alia/alia.db` on ephemeral storage; history can disappear after a
-restart or redeploy. Do not present it as durable production hosting.
+restart or redeploy. Back4App's free preview URL rotates and expires after 60 minutes, so
+redeploy immediately before a demonstration and do not use it as a permanent resume link.
+The API accepts its own HTTPS host in addition to configured origins, avoiding a second
+configuration deploy when the preview address rotates. Do not present this setup as
+durable production hosting.
 
 `render.yaml` remains a tested alternative deployment definition and uses the same root
 `Dockerfile`; it is not the active hosting platform.

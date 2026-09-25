@@ -59,12 +59,24 @@ def normalize_origin(value):
     host = parsed.hostname.lower()
     if ':' in host:
         host = f'[{host}]'
-    netloc = f'{host}:{port}' if port else host
+    default_port = (parsed.scheme == 'https' and port == 443) or (
+        parsed.scheme == 'http' and port == 80
+    )
+    netloc = f'{host}:{port}' if port and not default_port else host
     return f'{parsed.scheme.lower()}://{netloc}'
 
 
 def parse_origins(value):
     return {origin for item in value.split(',') if (origin := normalize_origin(item))}
+
+
+def origin_is_allowed(origin, host):
+    try:
+        normalized_origin = normalize_origin(origin or '')
+        same_host_origin = normalize_origin(f'https://{host}')
+    except RuntimeError:
+        return False
+    return normalized_origin in ORIGINS or normalized_origin == same_host_origin
 
 
 ORIGINS = parse_origins(
@@ -200,7 +212,7 @@ async def chat(socket: WebSocket):
         logger.warning('WebSocket rejected (%s)', reason)
         await socket.close(code=1008)
 
-    if origin not in ORIGINS:
+    if not origin_is_allowed(origin, socket.headers.get('host', '')):
         await reject('origin not allowed')
         return
     if limits.connections[ip] >= 8:
