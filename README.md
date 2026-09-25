@@ -82,29 +82,6 @@ docker compose down
 The application still starts without provider keys, allowing the UI, privacy controls,
 storage, health, and WebSocket handshake to be tested without spending provider credits.
 
-## Live HTTPS Demo (Back4App)
-
-The repository includes a Back4App deployment and a single-service Docker image that serves
-the compiled React application and FastAPI/WebSocket API from the same HTTPS origin.
-Back4App's free container plan is suitable for an interview demonstration and requires
-no always-on instance.
-
-[**Open the live HTTPS demo**](https://aliaaicompanion-0mjcdf7r.b4a.run) — invited viewers
-need the private beta access code. The service may take about a minute to wake after it
-has been idle.
-
-> **Note:** This app is successfully deployed on Back4App Containers.
-
-During Back4App Container setup, enter `GROQ_API_KEY` and a random
-`BETA_ACCESS_TOKEN` containing at least 32 characters. The access token is entered by
-invited viewers in Settings; it is never compiled into the frontend. The service uses
-Back4App's generated HTTPS URL as its allowed WebSocket origin.
-
-This free demo deliberately stores SQLite data on ephemeral storage. Conversations can
-disappear after a restart, redeploy, or idle shutdown. That is acceptable for a
-controlled interview demo, not for production or durable user accounts. The full
-production checklist remains in [RELEASE.md](RELEASE.md).
-
 ## Manual development
 
 Use Python 3.12 and Node 22:
