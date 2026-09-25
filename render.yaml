@@ -15,6 +15,8 @@ services:
         value: /tmp/alia/alia.db
       - key: ALIA_RETENTION_DAYS
         value: "7"
+      - key: ALLOWED_ORIGINS
+        value: https://alia-ai-companion.onrender.com
       - key: GROQ_MODEL
         value: openai/gpt-oss-120b
       - key: GROQ_API_KEY
