@@ -9,9 +9,16 @@ Blueprint creation. The demo uses one free instance and `/tmp/alia/alia.db`; its
 is intentionally ephemeral and can disappear after idle shutdown, restart, or redeploy.
 Do not present it as durable production hosting.
 
+The verified interview deployment is available at
+[alia-ai-companion.onrender.com](https://alia-ai-companion.onrender.com). Its root page,
+`/health` response, production startup checks, and security headers were validated for
+the `v1.1.0` release.
+
 ## Current release scope
 
-This version supports an invitation-only web beta with browser-scoped histories and a shared beta access code. It is not yet a general multi-user account service or a store-ready Android release. No deployment has been published by this change.
+This version supports an invitation-only deployed web beta with browser-scoped histories
+and a shared beta access code. It is not yet a general multi-user account service or a
+store-ready Android release.
 
 ## Production configuration
 

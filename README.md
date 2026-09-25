@@ -89,6 +89,10 @@ the compiled React application and FastAPI/WebSocket API from the same HTTPS ori
 Render's free web-service plan is suitable for an interview demonstration and requires
 no always-on instance.
 
+[**Open the live HTTPS demo**](https://alia-ai-companion.onrender.com) — invited viewers
+need the private beta access code. The service may take about a minute to wake after it
+has been idle.
+
 [![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/Nitin31804/alia-ai-companion)
 
 During Blueprint creation, enter `GROQ_API_KEY` and a random
