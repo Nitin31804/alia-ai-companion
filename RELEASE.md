@@ -19,6 +19,10 @@ durable production hosting.
 `render.yaml` remains a tested alternative deployment definition and uses the same root
 `Dockerfile`; it is not the active hosting platform.
 
+The repository includes `docs/alia-deployment-demo.mp4`, a 64-second recording of the
+temporary HTTPS deployment exercising streamed text chat and voice/avatar mode. Treat the
+recording as reproducible demonstration evidence, not as proof of permanent availability.
+
 ## Current release scope
 
 This version supports an invitation-only deployed web beta with browser-scoped histories
