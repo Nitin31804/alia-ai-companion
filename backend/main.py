@@ -32,7 +32,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 load_dotenv(Path(__file__).with_name('.env'))
 logger = logging.getLogger('alia')
-ORIGINS = {x.strip().rstrip('/') for x in os.getenv('ALLOWED_ORIGINS', 'http://localhost:5173,http://127.0.0.1:5173').split(',') if x.strip()}
+ORIGINS = {(x.strip().rstrip('/') if x.strip().startswith('http') else 'https://' + x.strip().rstrip('/')) for x in os.getenv('ALLOWED_ORIGINS', 'http://localhost:5173,http://127.0.0.1:5173').split(',') if x.strip()}
 RENDER_ORIGIN = os.getenv('RENDER_EXTERNAL_URL', '').rstrip('/')
 if RENDER_ORIGIN:
     ORIGINS.add(RENDER_ORIGIN)
